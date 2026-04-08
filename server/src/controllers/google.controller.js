@@ -92,3 +92,20 @@ const getStatus = (req, res) => {
 };
 
 module.exports = { connectGmail, handleCallback, disconnectGmail, getStatus };
+
+/**
+ * GET /api/google/debug-redirect
+ * Shows exactly what redirect_uri the server is sending to Google.
+ * Use this to find the mismatch. Remove after fixing.
+ */
+const debugRedirect = (req, res) => {
+  res.json({
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || '❌ NOT SET',
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? '✅ set' : '❌ NOT SET',
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET ? '✅ set' : '❌ NOT SET',
+    FRONTEND_URL: process.env.FRONTEND_URL || '❌ NOT SET',
+    NODE_ENV: process.env.NODE_ENV,
+  });
+};
+
+module.exports = { connectGmail, handleCallback, disconnectGmail, getStatus, debugRedirect };
