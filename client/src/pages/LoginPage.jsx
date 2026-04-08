@@ -116,10 +116,46 @@ export default function LoginPage() {
           </button>
 
           <p className="text-xs text-gray-400 text-center leading-relaxed">
-            By signing in you agree to our Terms of Service. We only read job-related emails — we never send emails on your behalf.
+            By signing in you agree to our{' '}
+            <a href="/terms" className="underline hover:text-gray-600 transition-colors">
+              Terms of Service
+            </a>
+            . We only read job-related emails — we never send emails on your behalf.
           </p>
+
+          {/* ✅ Privacy policy link — visible to Google crawler */}
+          <div className="pt-2 flex items-center justify-center gap-4 text-xs text-gray-400">
+            <a href="/privacy" className="hover:text-gray-600 underline transition-colors">
+              Privacy Policy
+            </a>
+            <span>·</span>
+            <a href="/terms" className="hover:text-gray-600 underline transition-colors">
+              Terms of Service
+            </a>
+          </div>
         </div>
       </div>
+
+      {/* ✅ Page footer — Google needs to see this on the homepage */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 py-3 px-6">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-400">
+          <span>© {new Date().getFullYear()} ApplyFlow — Job Application Tracker</span>
+          <div className="flex items-center gap-4">
+            <a href="/privacy" className="hover:text-gray-700 transition-colors font-medium">
+              Privacy Policy
+            </a>
+            <a href="/terms" className="hover:text-gray-700 transition-colors font-medium">
+              Terms of Service
+            </a>
+            <a
+              href="mailto:rohitkamble171012@gmail.com"
+              className="hover:text-gray-700 transition-colors"
+            >
+              Contact
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
