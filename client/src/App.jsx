@@ -22,7 +22,7 @@ export default function App() {
           <Route path="/login"   element={<LoginPage />} />
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms"   element={<TermsPage />} />
-          <Route path="/"        element={<Navigate to="/dashboard" replace />} />
+          <Route path="/"        element={<Navigate to="/login" replace />} />
 
           {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
