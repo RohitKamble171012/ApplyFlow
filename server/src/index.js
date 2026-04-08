@@ -73,8 +73,8 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 ApplyFlow server on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 ApplyFlow server on port ${PORT} [${process.env.NODE_ENV || 'production'}]`);
 });
 
 module.exports = app;
