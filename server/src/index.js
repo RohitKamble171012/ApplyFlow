@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-
 const connectDB = require('./config/database');
 const authRoutes = require('./routes/auth.routes');
 const googleRoutes = require('./routes/google.routes');
@@ -17,13 +16,14 @@ const syncRoutes = require('./routes/sync.routes');
 const calendarRoutes = require('./routes/calendar.routes');
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render's reverse proxy
+
 const PORT = process.env.PORT || 5000;
 
 connectDB();
 
 app.use(helmet());
 
-// Allow multiple origins: local dev + deployed frontend
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -32,7 +32,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, Render health checks)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS blocked: ${origin}`));
