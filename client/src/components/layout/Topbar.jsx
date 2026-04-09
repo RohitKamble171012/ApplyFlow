@@ -9,16 +9,18 @@ export const emitSyncComplete = () =>
   window.dispatchEvent(new CustomEvent('applyflow:syncComplete'));
 
 export default function Topbar({ search, onSearchChange, onSearchClear, onMenuToggle }) {
-  const { user, dbUser, logout } = useAuth();
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState('');
-  const [syncOk, setSyncOk] = useState(true);
+  const { user, dbUser, logout, refreshDbUser } = useAuth();
+  const [syncing, setSyncing]   = useState(false);
+  const [syncMsg, setSyncMsg]   = useState('');
+  const [syncOk, setSyncOk]     = useState(true);
   const [dropOpen, setDropOpen] = useState(false);
-  const dropRef = useRef(null);
+  const dropRef  = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const h = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setDropOpen(false); };
+    const h = (e) => {
+      if (dropRef.current && !dropRef.current.contains(e.target)) setDropOpen(false);
+    };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
@@ -26,16 +28,31 @@ export default function Topbar({ search, onSearchChange, onSearchClear, onMenuTo
   const handleSync = async () => {
     if (!dbUser?.gmailConnected) { navigate('/settings'); return; }
     try {
-      setSyncing(true); setSyncMsg('');
+      setSyncing(true);
+      setSyncMsg('');
       const res = await api.post('/api/gmail/sync', { maxResults: 100 });
       setSyncOk(true);
-      setSyncMsg(`✓ ${res.data.totalSaved} synced`);
+      setSyncMsg(`\u2713 ${res.data.totalSaved} synced`);
       emitSyncComplete();
       setTimeout(() => setSyncMsg(''), 5000);
     } catch (err) {
       setSyncOk(false);
-      setSyncMsg('Sync failed');
-      setTimeout(() => setSyncMsg(''), 5000);
+      const data = err.response?.data;
+
+      if (data?.action === 'reconnect') {
+        // Token expired or revoked — server already cleared it from DB
+        // Refresh dbUser so the UI correctly shows "not connected"
+        await refreshDbUser();
+        emitSyncComplete();
+        setSyncMsg('Gmail disconnected — reconnecting…');
+        setTimeout(() => {
+          setSyncMsg('');
+          navigate('/settings');
+        }, 2500);
+      } else {
+        setSyncMsg(data?.error || 'Sync failed');
+        setTimeout(() => setSyncMsg(''), 5000);
+      }
     } finally {
       setSyncing(false);
     }
@@ -49,17 +66,17 @@ export default function Topbar({ search, onSearchChange, onSearchClear, onMenuTo
       {/* Hamburger — mobile only */}
       <button
         onClick={onMenuToggle}
-        className="md:hidden w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100
-                   transition-colors flex-shrink-0 active:bg-gray-200"
+        className="md:hidden w-9 h-9 flex items-center justify-center rounded-xl
+                   hover:bg-gray-100 transition-colors flex-shrink-0 active:bg-gray-200"
         aria-label="Open menu"
       >
         <Menu className="h-5 w-5 text-gray-600" />
       </button>
 
-      {/* Logo text — mobile only */}
+      {/* Logo — mobile only */}
       <span className="md:hidden font-bold text-gray-900 text-sm flex-shrink-0 mr-1">ApplyFlow</span>
 
-      {/* Desktop spacer so search starts after sidebar width */}
+      {/* Desktop spacer — sidebar takes this width */}
       <div className="hidden md:block flex-shrink-0" style={{ width: 'var(--sidebar-width)' }} />
 
       {/* Search */}
@@ -69,13 +86,13 @@ export default function Topbar({ search, onSearchChange, onSearchClear, onMenuTo
 
       {/* Sync message */}
       {syncMsg && (
-        <span className={`text-xs hidden sm:inline flex-shrink-0 font-medium
+        <span className={`text-xs hidden sm:inline flex-shrink-0 font-medium max-w-[200px] truncate
           ${syncOk ? 'text-green-600' : 'text-red-500'}`}>
           {syncMsg}
         </span>
       )}
 
-      {/* Sync button — text on desktop, icon on mobile */}
+      {/* Sync button */}
       <button
         onClick={handleSync}
         disabled={syncing}
@@ -86,7 +103,7 @@ export default function Topbar({ search, onSearchChange, onSearchClear, onMenuTo
                    sm:w-auto sm:px-3 sm:gap-1.5 sm:text-xs sm:font-medium sm:text-gray-700"
       >
         <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin text-blue-500' : 'text-gray-500'}`} />
-        <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync'}</span>
+        <span className="hidden sm:inline">{syncing ? 'Syncing\u2026' : 'Sync'}</span>
       </button>
 
       {/* Avatar + dropdown */}
@@ -116,10 +133,15 @@ export default function Topbar({ search, onSearchChange, onSearchClear, onMenuTo
                 {user?.displayName || 'User'}
               </p>
               <p className="text-xs text-gray-500 truncate">{user?.email}</p>
-              {dbUser?.gmailConnected && (
+              {dbUser?.gmailConnected ? (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-400" />
                   <span className="text-xs text-green-600 font-medium">Gmail connected</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  <span className="text-xs text-red-500 font-medium">Gmail not connected</span>
                 </div>
               )}
             </div>
