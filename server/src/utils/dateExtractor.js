@@ -1,113 +1,127 @@
 /**
  * Date extractor for job application emails.
- * Finds interview dates, deadline dates, offer expiry dates etc.
+ * Extracts the SCHEDULED date from email body — NOT the received date.
  */
 
+// ── Event label patterns — capture the raw date/time string after keyword ────
 const EVENT_LABEL_PATTERNS = [
-  { label: 'Interview',    pattern: /interview\s+(?:scheduled|on|at|date)[:\s]+([^.\n]{5,60})/i },
-  { label: 'Interview',    pattern: /(?:scheduled|booked)\s+(?:for|on)\s+([^.\n]{5,60})/i },
-  { label: 'Assessment',   pattern: /(?:complete|submit)\s+(?:the\s+)?(?:assessment|test|assignment)\s+by\s+([^.\n]{5,50})/i },
-  { label: 'Deadline',     pattern: /(?:deadline|respond\s+by|reply\s+by|complete\s+by)\s*[:\-]?\s*([^.\n]{5,50})/i },
+  // "assessment will take place on Saturday, 11 Apr 2026 at 06:00 PM"
+  { label: 'Assessment', pattern: /(?:assessment|test|exam)\s+will\s+(?:take\s+place|be\s+held|be\s+conducted)\s+on\s+([^.\n]{5,70})/i },
+  // "scheduled on / scheduled for"
+  { label: 'Assessment', pattern: /(?:assessment|test|exam)\s+(?:is\s+)?scheduled\s+(?:on|for)\s+([^.\n]{5,70})/i },
+  // "take place on"
+  { label: 'Interview',  pattern: /(?:interview|round|discussion)\s+will\s+(?:take\s+place|be\s+held)\s+on\s+([^.\n]{5,70})/i },
+  // "interview scheduled on/for"
+  { label: 'Interview',  pattern: /interview\s+(?:is\s+)?scheduled\s+(?:on|for)\s+([^.\n]{5,70})/i },
+  // "scheduled for / booked for"
+  { label: 'Interview',  pattern: /(?:scheduled|booked)\s+for\s+([^.\n]{5,70})/i },
+  // "your assessment on DATE at TIME"
+  { label: 'Assessment', pattern: /your\s+assessment\s+(?:on|at)\s+([^.\n]{5,70})/i },
+  // "will take place on DATE"  (generic)
+  { label: 'Assessment', pattern: /will\s+take\s+place\s+on\s+([^.\n]{5,70})/i },
+  // "inviting you to take the assessment on DATE"
+  { label: 'Assessment', pattern: /take\s+the\s+assessment\s+(?:on|for|at)\s+([^.\n]{5,70})/i },
+  // "deadline / respond by / complete by"
+  { label: 'Deadline',   pattern: /(?:deadline|respond\s+by|reply\s+by|complete\s+by|submit\s+by)\s*[:\-]?\s*([^.\n]{5,50})/i },
+  // "offer expires / valid until"
   { label: 'Offer Expiry', pattern: /offer\s+(?:expires?|valid\s+until|deadline)\s*[:\-]?\s*([^.\n]{5,50})/i },
-  { label: 'Join Date',    pattern: /(?:joining|start)\s+date\s*[:\-]?\s*([^.\n]{5,50})/i },
-  { label: 'Meeting',      pattern: /(?:meet|call|discussion)\s+(?:on|at|scheduled\s+for)\s+([^.\n]{5,60})/i },
+  // "joining / start date"
+  { label: 'Join Date',  pattern: /(?:joining|start)\s+date\s*[:\-]?\s*([^.\n]{5,50})/i },
+  // "meet / call on"
+  { label: 'Meeting',    pattern: /(?:meet|call|discussion)\s+(?:on|at|scheduled\s+for)\s+([^.\n]{5,60})/i },
 ];
 
-// Regex patterns that match actual date/time strings
+// ── Date string patterns (match actual date inside captured string) ───────────
 const DATE_PATTERNS = [
-  // "January 15, 2025" / "Jan 15, 2025" / "15 January 2025"
+  // "Saturday, 11 Apr 2026" / "11 Apr 2026" / "April 11, 2026"
+  /(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)?,?\s*\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?),?\s+\d{4}/i,
   /(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}/i,
-  /\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?),?\s+\d{4}/i,
-  // "15/01/2025" / "01-15-2025" / "2025-01-15"
+  // ISO: "2026-04-11"
   /\d{4}[-\/]\d{2}[-\/]\d{2}/,
-  /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}/,
-  // "Monday, January 15" / "Monday 15th"
-  /(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?),?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}/i,
-  // "tomorrow" / "next Monday" / "this Friday"
-  /(?:tomorrow|next\s+(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?)|this\s+(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?))/i,
+  // "11/04/2026" or "04-11-2026"
+  /\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/,
+  // "tomorrow" / "next Monday"
+  /\b(?:tomorrow)\b/i,
+  /\bnext\s+(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b/i,
 ];
 
-// Time patterns
-const TIME_PATTERN = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)|(?:\d{1,2}:\d{2}(?:\s*(?:am|pm))?)\s*(?:IST|EST|PST|CST|GMT|UTC)?)/i;
+// ── Time pattern ──────────────────────────────────────────────────────────────
+const TIME_PATTERN = /\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|AM|PM)(?:\s*(?:IST|EST|PST|CST|GMT|UTC|GMT[+-]\d+))?)/i;
 
-/**
- * Extract calendar events from email text
- * @param {Object} email - { subject, body, snippet, receivedAt, classification }
- * @returns {Array} events
- */
+// ── Main extractor ────────────────────────────────────────────────────────────
 const extractCalendarEvents = (email) => {
   const { subject = '', body = '', snippet = '', receivedAt, classification = {} } = email;
   const fullText = `${subject}\n${snippet}\n${body}`;
   const events = [];
+  const seen = new Set(); // deduplicate by date string
 
-  const status = classification.detectedCategory || '';
   const company = classification.extractedCompany || '';
-  const role = classification.extractedRole || '';
-  const label = `${company}${role ? ` — ${role}` : ''}`;
+  const role    = classification.extractedRole    || '';
+  const label   = `${company}${role ? ` — ${role}` : ''}`;
+  const status  = classification.detectedCategory || '';
 
-  // Try structured patterns first
   for (const { label: eventType, pattern } of EVENT_LABEL_PATTERNS) {
     const m = pattern.exec(fullText);
     if (!m) continue;
 
-    const rawDateStr = m[1];
-    const parsedDate = parseDate(rawDateStr, receivedAt);
+    const rawStr = m[1].trim();
+
+    // Parse actual date from the captured string
+    const parsedDate = parseDate(rawStr, receivedAt);
     if (!parsedDate) continue;
 
-    const timeMatch = TIME_PATTERN.exec(rawDateStr);
+    // Deduplicate: same date + same event type
+    const key = `${eventType}-${parsedDate}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    // Extract time from same raw string
+    const timeMatch = TIME_PATTERN.exec(rawStr);
+
     events.push({
       title: `${eventType}: ${label || subject.slice(0, 40)}`,
       date: parsedDate,
-      time: timeMatch ? timeMatch[0].trim() : null,
-      type: eventType.toLowerCase().replace(/\s+/g, '_'),
+      time: timeMatch ? timeMatch[1].trim() : null,
+      type: eventType.toLowerCase().replace(/[\s\/]+/g, '_'),
       company,
       role,
       status,
-      sourceText: rawDateStr.slice(0, 80),
+      sourceText: rawStr.slice(0, 80),
+      isAutoGenerated: false,
     });
+
+    // Only take the first strong match per event type to avoid noise
+    break;
   }
 
-  // Auto-generate events based on status (even if no explicit date in email)
-  if (events.length === 0 && status && company) {
+  // Fallback: auto-generate from receivedAt ONLY if no date was found in body
+  if (events.length === 0 && company) {
     const baseDate = receivedAt ? new Date(receivedAt) : new Date();
 
     if (status === 'Interview') {
       events.push({
         title: `Interview: ${label}`,
         date: baseDate.toISOString().split('T')[0],
-        time: null,
-        type: 'interview',
-        company,
-        role,
-        status,
-        sourceText: 'Auto-generated from interview email',
+        time: null, type: 'interview', company, role, status,
+        sourceText: 'Auto-generated from interview email (no date found in body)',
         isAutoGenerated: true,
       });
     } else if (status === 'OA / Assessment') {
       events.push({
         title: `Assessment: ${label}`,
         date: baseDate.toISOString().split('T')[0],
-        time: null,
-        type: 'assessment',
-        company,
-        role,
-        status,
-        sourceText: 'Auto-generated from assessment email',
+        time: null, type: 'assessment', company, role, status,
+        sourceText: 'Auto-generated from assessment email (no date found in body)',
         isAutoGenerated: true,
       });
     } else if (status === 'Follow-up Needed') {
-      // Suggest follow-up in 3 days
-      const followUp = new Date(baseDate);
-      followUp.setDate(followUp.getDate() + 3);
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() + 3);
       events.push({
         title: `Follow-up: ${label}`,
-        date: followUp.toISOString().split('T')[0],
-        time: null,
-        type: 'follow_up',
-        company,
-        role,
-        status,
-        sourceText: 'Auto-generated follow-up reminder',
+        date: d.toISOString().split('T')[0],
+        time: null, type: 'follow_up', company, role, status,
+        sourceText: 'Auto-generated follow-up reminder (+3 days)',
         isAutoGenerated: true,
       });
     }
@@ -116,44 +130,40 @@ const extractCalendarEvents = (email) => {
   return events;
 };
 
+// ── Date parser ───────────────────────────────────────────────────────────────
 const parseDate = (str, referenceDate) => {
   if (!str) return null;
   const ref = referenceDate ? new Date(referenceDate) : new Date();
 
-  // Handle relative dates
   const lower = str.toLowerCase().trim();
-  if (lower.includes('tomorrow')) {
+
+  // Relative
+  if (/\btomorrow\b/.test(lower)) {
     const d = new Date(ref);
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   }
 
-  const nextDayMatch = lower.match(/next\s+(mon|tue|wed|thu|fri|sat|sun)/i);
-  if (nextDayMatch) {
-    const dayMap = { mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0 };
-    const target = dayMap[nextDayMatch[1].toLowerCase()];
+  const nextDay = lower.match(/\bnext\s+(mon|tue|wed|thu|fri|sat|sun)/i);
+  if (nextDay) {
+    const dayMap = { mon:1, tue:2, wed:3, thu:4, fri:5, sat:6, sun:0 };
+    const target = dayMap[nextDay[1].toLowerCase()];
     const d = new Date(ref);
-    const curr = d.getDay();
-    const diff = (target - curr + 7) % 7 || 7;
+    const diff = (target - d.getDay() + 7) % 7 || 7;
     d.setDate(d.getDate() + diff);
     return d.toISOString().split('T')[0];
   }
 
-  // Try native Date.parse on the raw string
+  // Try each date pattern against the captured string
   for (const pattern of DATE_PATTERNS) {
     const m = pattern.exec(str);
-    if (m) {
-      const attempt = new Date(m[0]);
-      if (!isNaN(attempt.getTime())) {
-        return attempt.toISOString().split('T')[0];
-      }
+    if (!m) continue;
+    // Clean up day suffixes before parsing
+    const cleaned = m[0].replace(/(\d+)(?:st|nd|rd|th)/i, '$1');
+    const attempt = new Date(cleaned);
+    if (!isNaN(attempt.getTime()) && attempt.getFullYear() > 2020) {
+      return attempt.toISOString().split('T')[0];
     }
-  }
-
-  // Last resort — try parsing the whole string
-  const attempt = new Date(str.slice(0, 30));
-  if (!isNaN(attempt.getTime()) && attempt.getFullYear() > 2020) {
-    return attempt.toISOString().split('T')[0];
   }
 
   return null;
